@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -15,10 +16,12 @@ struct client_data {
   char ident[128];
 };
 
-int lsock;                      /* has to be global for the sighandler :-( */
+int lsock = -1;                 /* has to be global for the sighandler :-( */
+char *unix_socket_path = NULL;  /* has to be global for the sighandler :-( */
 
 static void sighandler(int signo);
-void listen_on(const unsigned short port);
+void listen_on(const unsigned short port
+               /*, const char* unix_socket_path */ );
 void process_connections(void /*const int lsock */ );
 void accept_connection(fd_set * status, /*int lsock, */
                        struct client_data **clients);
@@ -29,19 +32,20 @@ void handle_client_exit(fd_set * status, int csock,
 void do_write(const char *buf, fd_set * status, int csock,
               struct client_data **clients);
 
-int main(const int argc, const char **argv)
+int main(const int argc, /*const */ char **argv)
 {
   int port;
 
   if (argc != 2) {
-    fprintf(stderr, "%s: usage: %s <port>\n", argv[0], argv[0]);
+    fprintf(stderr, "%s: usage: %s <port>/<unix-domain-socket>\n", argv[0],
+            argv[0]);
     return 1;
   }
 
   port = atoi(argv[1]);
   if (port < 1 || port > 65535) {
-    fprintf(stderr, "%s: invalid port: %s\n", argv[0], argv[1]);
-    return 2;
+    port = -1;
+    unix_socket_path = argv[1];
   }
 
   signal(SIGINT, sighandler);
@@ -56,20 +60,37 @@ static void sighandler(int signo)
 {
   fprintf(stderr, "\nSignal %d caught, cleaning up.\n", signo);
   close(lsock);
+  if (unix_socket_path != NULL)
+    unlink(unix_socket_path);
 }
 
-void listen_on(const unsigned short port)
+void listen_on(const unsigned short port
+               /*, const char* unix_socket_path */ )
 {
   /*int lsock; */
-  struct sockaddr_in lsockaddr;
+  int bind_rc = -1;
 
-  lsock = socket(PF_INET, SOCK_STREAM, 0);
-  memset(&lsockaddr, 0, sizeof(lsockaddr));
-  lsockaddr.sin_family = AF_INET;
-  lsockaddr.sin_port = htons(port);
-  lsockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  if (unix_socket_path != NULL) {
+    struct sockaddr_un lsockaddr;
+    memset(&lsockaddr, 0, sizeof(lsockaddr));
+    lsock = socket(AF_UNIX, SOCK_STREAM, 0);
+    lsockaddr.sun_family = AF_UNIX;
+    strncpy(lsockaddr.sun_path, unix_socket_path,
+            sizeof(lsockaddr.sun_path) - 1);
+    bind_rc =
+        bind(lsock, (struct sockaddr *) &lsockaddr, sizeof(lsockaddr));
+  } else {
+    struct sockaddr_in lsockaddr;
+    memset(&lsockaddr, 0, sizeof(lsockaddr));
+    lsock = socket(PF_INET, SOCK_STREAM, 0);
+    lsockaddr.sin_family = AF_INET;
+    lsockaddr.sin_port = htons(port);
+    lsockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bind_rc =
+        bind(lsock, (struct sockaddr *) &lsockaddr, sizeof(lsockaddr));
+  }
 
-  if (bind(lsock, (struct sockaddr *) &lsockaddr, sizeof(lsockaddr)) == -1) {
+  if (bind_rc == -1) {
     perror("bind() failed");
     exit(3);
   }
@@ -130,8 +151,7 @@ void accept_connection(fd_set * status, /*int lsock, */
     close(csock);
   } else {
     FD_SET(csock, status);
-    clients[csock] = malloc(sizeof(struct client_data));        /* TODO: free me somewhere
-                                                                   FIXME: NULL? C'mon... */
+    clients[csock] = malloc(sizeof(struct client_data));        /* FIXME: is NULL? C'mon... */
     memset(clients[csock], 0, sizeof(struct client_data));
     sprintf(clients[csock]->ident,      /* sizeof(ident) == 128 should be enough,
                                            I really want ANSI... */
