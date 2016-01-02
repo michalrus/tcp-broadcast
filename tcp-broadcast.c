@@ -66,7 +66,7 @@ void listen_on(const unsigned short port)
 void process_connections(const int lsock)
 {
   int fd;
-  fd_set status;
+  fd_set status, current;
   struct client_data *clients[FD_SETSIZE];
 
   memset(clients, 0, sizeof(clients));
@@ -77,12 +77,15 @@ void process_connections(const int lsock)
   FD_SET(lsock, &status);
 
   for (;;) {
-    if (select(FD_SETSIZE, &status, NULL, NULL, NULL) == -1) {
+    fprintf(stderr, "running select()\n");
+    current = status;
+    if (select(FD_SETSIZE, &current, NULL, NULL, NULL) == -1) {
       perror("select() failed");
       exit(5);
     }
+    fprintf(stderr, "select() returned\n");
     for (fd = 0; fd < FD_SETSIZE; fd++)
-      if (FD_ISSET(fd, &status)) {
+      if (FD_ISSET(fd, &current)) {
         if (fd == lsock)
           accept_connection(&status, lsock, clients);
         else
