@@ -19,8 +19,8 @@ void accept_connection(fd_set * status, int lsock,
                        struct client_data **clients);
 void handle_data(fd_set * status, int csock, struct client_data **clients);
 void handle_line(fd_set * status, int csock, struct client_data **clients);
-void handle_client_error(fd_set * status, int csock,
-                         struct client_data **clients);
+void handle_client_exit(fd_set * status, int csock,
+                        struct client_data **clients);
 void do_write(const char *buf, fd_set * status, int csock,
               struct client_data **clients);
 
@@ -132,7 +132,7 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
   int num_read =
       read(csock, c->buf + c->buf_len, sizeof(c->buf) - c->buf_len - 1);
   if (num_read <= 0)
-    handle_client_error(status, csock, clients);
+    handle_client_exit(status, csock, clients);
   else {
     char *line_end;
     c->buf_len += num_read;
@@ -186,7 +186,7 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
     do_write("pong\n", status, csock, clients);
   } else if (strcmp(cmd, "quit") == 0) {
     do_write("bye\n", status, csock, clients);
-    handle_client_error(status, csock, clients);
+    handle_client_exit(status, csock, clients);
   } else {
     do_write
         ("unknown Available commands: broadcast <msg>, ping, pong, quit.\n",
@@ -194,8 +194,8 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
   }
 }
 
-void handle_client_error(fd_set * status, int csock,
-                         struct client_data **clients)
+void handle_client_exit(fd_set * status, int csock,
+                        struct client_data **clients)
 {
   if (clients[csock]) {
     fprintf(stderr, "[%s] disconnected\n", clients[csock]->ident);
@@ -211,5 +211,5 @@ void do_write(const char *buf, fd_set * status, int csock,
 {
   int num_written = write(csock, buf, strlen(buf));
   if (num_written < 0)
-    handle_client_error(status, csock, clients);
+    handle_client_exit(status, csock, clients);
 }
