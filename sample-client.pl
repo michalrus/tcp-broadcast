@@ -27,8 +27,8 @@ for (;;) {
       }
       if ($ln eq 'ping') {
         print CIN "pong\n";
-      } elsif ($ln =~ /^broadcast [^ ]+ (.*)$/) {
-        print "Got a broadcast: #$1#\n";
+      } elsif ($ln =~ /^broadcast [^ ]+ (.*?)(?:\t(.*))?$/) {
+        system("notify-send", "-h", "int:transient:1", "-a", $1, $1, ($2 ? $2 : ""));
       }
     } elsif ($found == 0) { # timeout
       if ($awaiting_pong) {
