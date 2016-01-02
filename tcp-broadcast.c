@@ -1,19 +1,27 @@
+#define _POSIX_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define PING_AFTER 5
+#define TMOUT_SECS 5
+
 struct client_data {
   char buf[4096];               /* this implies the max line length */
   size_t buf_len;
   char ident[128];
+  time_t last_seen;
+  int awaiting_pong;
 };
 
 int lsock = -1;                 /* has to be global for the sighandler :-( */
@@ -113,26 +121,40 @@ void process_connections(void /*const int lsock */ )
 
   FD_ZERO(&status);
   FD_SET(lsock, &status);
-
   for (;;) {
+    struct timeval tmout;
+    tmout.tv_sec = 1;
+    tmout.tv_usec = 0;
     current = status;           /* I copy the original fd_set every time,
                                    because select() obviously clears fds
                                    that are not readable; and in the next
                                    run requires them to be set again. */
-    if (select(FD_SETSIZE, &current, NULL, NULL, NULL) == -1) {
+    if (select(FD_SETSIZE, &current, NULL, NULL, &tmout) == -1) {
       if (errno == EINTR)
         exit(0);
       perror("select() failed");
       exit(5);
     }
 
-    for (fd = 0; fd < FD_SETSIZE; fd++)
+    for (fd = 0; fd < FD_SETSIZE; fd++) {
       if (FD_ISSET(fd, &current)) {
         if (fd == lsock)
           accept_connection(&status, /*lsock, */ clients);
         else
           handle_data(&status, fd, clients);
       }
+      /* discover dropped connections */
+      if (fd != lsock && FD_ISSET(fd, &status)) {       /* i.e. if the client exists */
+        time_t now = time(NULL);
+        int since_last_seen = now - clients[fd]->last_seen;
+        if (since_last_seen >= PING_AFTER && !clients[fd]->awaiting_pong) {
+          do_write("ping\n", &status, fd, clients);
+          clients[fd]->awaiting_pong = 1;
+        } else if (since_last_seen >= PING_AFTER + TMOUT_SECS) {
+          handle_client_exit(&status, fd, clients);
+        }
+      }
+    }
   }
 }
 
@@ -153,6 +175,7 @@ void accept_connection(fd_set * status, /*int lsock, */
     FD_SET(csock, status);
     clients[csock] = malloc(sizeof(struct client_data));        /* FIXME: is NULL? C'mon... */
     memset(clients[csock], 0, sizeof(struct client_data));
+    clients[csock]->last_seen = time(NULL);
     sprintf(clients[csock]->ident,      /* sizeof(ident) == 128 should be enough,
                                            I really want ANSI... */
             "%s:%hu", inet_ntoa(csockaddr.sin_addr),
@@ -171,6 +194,8 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
     handle_client_exit(status, csock, clients);
   else {
     char *line_end;
+    c->last_seen = time(NULL);
+    c->awaiting_pong = 0;       /* you sure this is semantically correct? */
     c->buf_len += num_read;
     c->buf[c->buf_len] = '\0';
     for (;;) {                  /* there may be several lines in the buffer */
@@ -223,6 +248,8 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
   } else if (strcmp(cmd, "quit") == 0) {
     do_write("bye\n", status, csock, clients);
     handle_client_exit(status, csock, clients);
+  } else if (strcmp(cmd, "pong") == 0) {
+    c->awaiting_pong = 0;
   } else {
     do_write
         ("unknown Available commands: broadcast <msg>, ping, pong, quit.\n",
