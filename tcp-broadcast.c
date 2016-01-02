@@ -21,6 +21,8 @@ void handle_data(fd_set * status, int csock, struct client_data **clients);
 void handle_line(fd_set * status, int csock, struct client_data **clients);
 void handle_client_error(fd_set * status, int csock,
                          struct client_data **clients);
+void do_write(const char *buf, fd_set * status, int csock,
+              struct client_data **clients);
 
 int main(const int argc, const char **argv)
 {
@@ -110,7 +112,7 @@ void accept_connection(fd_set * status, int lsock,
   } else if (csock >= FD_SETSIZE) {
     fprintf(stderr, "currently unable to accept new connections\n");
     close(csock);
-  } else if (write(csock, "kupa\r\n", 6) >= 0) {
+  } else {
     FD_SET(csock, status);
     clients[csock] = malloc(sizeof(struct client_data));        /* TODO: free me somewhere
                                                                    FIXME: NULL? C'mon... */
@@ -120,6 +122,7 @@ void accept_connection(fd_set * status, int lsock,
             "%s:%hu", inet_ntoa(csockaddr.sin_addr),
             ntohs(csockaddr.sin_port));
     fprintf(stderr, "[%s] new connection\n", clients[csock]->ident);
+    do_write("hello\n", status, csock, clients);
   }
 }
 
@@ -179,8 +182,15 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
   fprintf(stderr, "[%s] cmd = \"%s\" && arg = \"%s\"\n", c->ident, cmd,
           arg);
 
-  if (FD_ISSET(csock, status)) {
-    /* FIXME: remove this; added only to circumvent a warning */
+  if (strcmp(cmd, "ping") == 0) {
+    do_write("pong\n", status, csock, clients);
+  } else if (strcmp(cmd, "quit") == 0) {
+    do_write("bye\n", status, csock, clients);
+    handle_client_error(status, csock, clients);
+  } else {
+    do_write
+        ("unknown Available commands: broadcast <msg>, ping, pong, quit.\n",
+         status, csock, clients);
   }
 }
 
@@ -194,4 +204,12 @@ void handle_client_error(fd_set * status, int csock,
   }
   FD_CLR(csock, status);
   close(csock);
+}
+
+void do_write(const char *buf, fd_set * status, int csock,
+              struct client_data **clients)
+{
+  int num_written = write(csock, buf, strlen(buf));
+  if (num_written < 0)
+    handle_client_error(status, csock, clients);
 }
