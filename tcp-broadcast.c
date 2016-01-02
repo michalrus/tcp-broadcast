@@ -151,6 +151,8 @@ void process_connections(void /*const int lsock */ )
           do_write("ping\n", &status, fd, clients);
           clients[fd]->awaiting_pong = 1;
         } else if (since_last_seen >= PING_AFTER + TMOUT_SECS) {
+          do_write("bye Timed out, please respond to ping's.\n", &status,
+                   fd, clients);
           handle_client_exit(&status, fd, clients);
         }
       }
@@ -180,8 +182,8 @@ void accept_connection(fd_set * status, /*int lsock, */
                                            I really want ANSI... */
             "%s:%hu", inet_ntoa(csockaddr.sin_addr),
             ntohs(csockaddr.sin_port));
-    fprintf(stderr, "[%s] new connection\n", clients[csock]->ident);
-    do_write("hello\n", status, csock, clients);
+    /* fprintf(stderr, "[%s] new connection\n", clients[csock]->ident); */
+    do_write("ping\n", status, csock, clients);
   }
 }
 
@@ -240,16 +242,26 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
       arg++;
     }
 
-  fprintf(stderr, "[%s] cmd = \"%s\" && arg = \"%s\"\n", c->ident, cmd,
-          arg);
+  /* fprintf(stderr, "[%s] cmd = \"%s\" && arg = \"%s\"\n", c->ident, cmd,
+     arg); */
 
   if (strcmp(cmd, "ping") == 0) {
     do_write("pong\n", status, csock, clients);
+  } else if (strcmp(cmd, "pong") == 0) {
+    c->awaiting_pong = 0;
   } else if (strcmp(cmd, "quit") == 0) {
     do_write("bye\n", status, csock, clients);
     handle_client_exit(status, csock, clients);
-  } else if (strcmp(cmd, "pong") == 0) {
-    c->awaiting_pong = 0;
+  } else if (strcmp(cmd, "broadcast") == 0 && arg != NULL) {
+    int fd;
+    for (fd = 0; fd < FD_SETSIZE; fd++)
+      if (clients[fd] != NULL) {
+        do_write("broadcast ", status, fd, clients);
+        do_write(c->ident, status, fd, clients);
+        do_write(" ", status, fd, clients);
+        do_write(arg, status, fd, clients);
+        do_write("\n", status, fd, clients);    /* I do still want ANSI :-) */
+      }
   } else {
     do_write
         ("unknown Available commands: broadcast <msg>, ping, pong, quit.\n",
@@ -261,7 +273,7 @@ void handle_client_exit(fd_set * status, int csock,
                         struct client_data **clients)
 {
   if (clients[csock]) {
-    fprintf(stderr, "[%s] disconnected\n", clients[csock]->ident);
+    /* fprintf(stderr, "[%s] disconnected\n", clients[csock]->ident); */
     free(clients[csock]);
     clients[csock] = NULL;
   }
