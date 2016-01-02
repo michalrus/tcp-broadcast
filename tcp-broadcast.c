@@ -139,28 +139,32 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
     char *line_end;
     c->buf_len += num_read;
     c->buf[c->buf_len] = '\0';
-    line_end = strchr(c->buf, '\n');
-    if (line_end == NULL && c->buf_len >= sizeof(c->buf) - 1) {
-      /* no new line, but buffer full, we have to flush */
-      c->buf[c->buf_len] = '\0';
-      handle_line(status, csock, clients);
-      c->buf_len = 0;
-    } else if (line_end != NULL) {
-      /* new line found */
-      size_t next_line_offset = (line_end - c->buf + 1);
-      size_t this_line_len = (line_end - c->buf);
-      size_t i;
-      if (this_line_len > 0 && c->buf[this_line_len - 1] == '\r')
-        this_line_len--;
-      c->buf[this_line_len] = '\0';
-      handle_line(status, csock, clients);
-      /* move the rest of the buffer to the begining; circular would be better... */
-      fprintf(stderr, "Copying...\n");
-      for (i = 0; i + next_line_offset < c->buf_len; i++)
-        *(c->buf + i) = *(c->buf + next_line_offset + i);
-      fprintf(stderr, "Copied!\n");
-      c->buf_len -= next_line_offset;
-    }                           /* else: no new line, buffer not full, let's wait */
+    for (;;) {
+      line_end = strchr(c->buf, '\n');
+      if (line_end == NULL && c->buf_len >= sizeof(c->buf) - 1) {
+        /* no new line, but buffer full, we have to flush */
+        c->buf[c->buf_len] = '\0';
+        handle_line(status, csock, clients);
+        c->buf_len = 0;
+        c->buf[0] = '\0';
+      } else if (line_end != NULL) {
+        /* new line found */
+        size_t next_line_offset = (line_end - c->buf + 1);
+        size_t this_line_len = (line_end - c->buf);
+        size_t i;
+        if (this_line_len > 0 && c->buf[this_line_len - 1] == '\r')
+          this_line_len--;
+        c->buf[this_line_len] = '\0';
+        handle_line(status, csock, clients);
+        /* move the rest of the buffer to the begining; circular would be better... */
+        fprintf(stderr, "Copying...\n");
+        for (i = 0; i + next_line_offset < c->buf_len; i++)
+          *(c->buf + i) = *(c->buf + next_line_offset + i);
+        fprintf(stderr, "Copied!\n");
+        c->buf_len -= next_line_offset;
+      } else
+        break;                  /* no new line, buffer not full, let's wait */
+    }
   }
 }
 
