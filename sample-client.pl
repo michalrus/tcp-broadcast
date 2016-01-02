@@ -2,16 +2,21 @@
 
 use strict;
 use warnings;
+use utf8;
 
 use IPC::Open3;
 
 my $timeout = 3; # [s]
+
+binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 
 for (;;) {
   print "connecting...\n";
   my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout, 'm@michalrus.com',
                  'socat', '-', 'UNIX-CONNECT:./sock');
   my $pid = open3(*CIN, *COUT, *CERR, @command);
+
+  binmode(COUT, ":utf8"); binmode(CERR, ":utf8"); binmode(CIN,  ":utf8");
 
   my $rin; my $rout;
   my $awaiting_pong = 0; my $connected_printed = 0;
@@ -28,7 +33,9 @@ for (;;) {
       if ($ln eq 'ping') {
         print CIN "pong\n";
       } elsif ($ln =~ /^broadcast [^ ]+ (.*?)(?:\t(.*))?$/) {
-        system("notify-send", "-h", "int:transient:1", "-a", $1, $1, ($2 ? $2 : ""));
+        my $app = $1; my $title = $1; my $body = $2 ? $2 : "";
+        $app =~ s/—/-/g;
+        system("notify-send", "-h", "int:transient:1", "-a", $app, $title, $body);
       }
     } elsif ($found == 0) { # timeout
       if ($awaiting_pong) {
