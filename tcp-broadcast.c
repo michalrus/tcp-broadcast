@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 
 struct client_data {
-  char buf[4096];
+  char buf[40];                 /* this implies the max line length */
   size_t buf_len;
   char ident[128];
 };
@@ -142,10 +142,11 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
     line_end = strchr(c->buf, '\n');
     if (line_end == NULL && c->buf_len >= sizeof(c->buf) - 1) {
       /* no new line, but buffer full, we have to flush */
-
-      /* TODO: wriiiiiiiiiiiiiiiiiiiiiiiiiiite this */
-
+      c->buf[c->buf_len] = '\0';
+      fprintf(stderr, "[%s] sent \"%s\"\n", c->ident, c->buf);
+      c->buf_len = 0;
     } else if (line_end != NULL) {
+      /* new line found */
       size_t next_line_offset = (line_end - c->buf + 1);
       size_t this_line_len = (line_end - c->buf);
       size_t i;
