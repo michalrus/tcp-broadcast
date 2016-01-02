@@ -18,6 +18,9 @@ void process_connections(const int lsock);
 void accept_connection(fd_set * status, int lsock,
                        struct client_data **clients);
 void handle_data(fd_set * status, int csock, struct client_data **clients);
+void handle_line(fd_set * status, int csock, struct client_data **clients);
+void handle_client_error(fd_set * status, int csock,
+                         struct client_data **clients);
 
 int main(const int argc, const char **argv)
 {
@@ -78,7 +81,10 @@ void process_connections(const int lsock)
 
   for (;;) {
     fprintf(stderr, "running select()\n");
-    current = status;
+    current = status;           /* I copy the original fd_set every time,
+                                   because select() obviously clears fds
+                                   that are not readable; and in the next
+                                   run requires them to be set again. */
     if (select(FD_SETSIZE, &current, NULL, NULL, NULL) == -1) {
       perror("select() failed");
       exit(5);
@@ -127,15 +133,9 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
   fprintf(stderr, "[%s] sent something!\n", c->ident);
   num_read =
       read(csock, c->buf + c->buf_len, sizeof(c->buf) - c->buf_len - 1);
-  if (num_read <= 0) {
-    if (clients[csock]) {
-      fprintf(stderr, "[%s] disconnected\n", clients[csock]->ident);
-      free(clients[csock]);
-      clients[csock] = NULL;
-    }
-    FD_CLR(csock, status);
-    close(csock);
-  } else {
+  if (num_read <= 0)
+    handle_client_error(status, csock, clients);
+  else {
     char *line_end;
     c->buf_len += num_read;
     c->buf[c->buf_len] = '\0';
@@ -143,7 +143,7 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
     if (line_end == NULL && c->buf_len >= sizeof(c->buf) - 1) {
       /* no new line, but buffer full, we have to flush */
       c->buf[c->buf_len] = '\0';
-      fprintf(stderr, "[%s] sent \"%s\"\n", c->ident, c->buf);
+      handle_line(status, csock, clients);
       c->buf_len = 0;
     } else if (line_end != NULL) {
       /* new line found */
@@ -153,9 +153,7 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
       if (this_line_len > 0 && c->buf[this_line_len - 1] == '\r')
         this_line_len--;
       c->buf[this_line_len] = '\0';
-
-      fprintf(stderr, "[%s] sent \"%s\"\n", c->ident, c->buf);
-
+      handle_line(status, csock, clients);
       /* move the rest of the buffer to the begining; circular would be better... */
       fprintf(stderr, "Copying...\n");
       for (i = 0; i + next_line_offset < c->buf_len; i++)
@@ -164,4 +162,27 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
       c->buf_len -= next_line_offset;
     }                           /* else: no new line, buffer not full, let's wait */
   }
+}
+
+void handle_line(fd_set * status, int csock, struct client_data **clients)
+{
+  struct client_data *c = clients[csock];
+
+  if (FD_ISSET(csock, status)) {
+    /* FIXME: remove this; added only to circumvent a warning */
+  }
+
+  fprintf(stderr, "[%s] sent line: \"%s\"\n", c->ident, c->buf);
+}
+
+void handle_client_error(fd_set * status, int csock,
+                         struct client_data **clients)
+{
+  if (clients[csock]) {
+    fprintf(stderr, "[%s] disconnected\n", clients[csock]->ident);
+    free(clients[csock]);
+    clients[csock] = NULL;
+  }
+  FD_CLR(csock, status);
+  close(csock);
 }
