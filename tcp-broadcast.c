@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
@@ -13,9 +15,12 @@ struct client_data {
   char ident[128];
 };
 
+int lsock;                      /* has to be global for the sighandler :-( */
+
+static void sighandler(int signo);
 void listen_on(const unsigned short port);
-void process_connections(const int lsock);
-void accept_connection(fd_set * status, int lsock,
+void process_connections(void /*const int lsock */ );
+void accept_connection(fd_set * status, /*int lsock, */
                        struct client_data **clients);
 void handle_data(fd_set * status, int csock, struct client_data **clients);
 void handle_line(fd_set * status, int csock, struct client_data **clients);
@@ -39,14 +44,23 @@ int main(const int argc, const char **argv)
     return 2;
   }
 
+  signal(SIGINT, sighandler);
+  signal(SIGTERM, sighandler);
+
   listen_on((unsigned short) port);
 
   return 0;
 }
 
+static void sighandler(int signo)
+{
+  fprintf(stderr, "\nSignal %d caught, cleaning up.\n", signo);
+  close(lsock);
+}
+
 void listen_on(const unsigned short port)
 {
-  int lsock;
+  /*int lsock; */
   struct sockaddr_in lsockaddr;
 
   lsock = socket(PF_INET, SOCK_STREAM, 0);
@@ -65,10 +79,10 @@ void listen_on(const unsigned short port)
     exit(4);
   }
 
-  process_connections(lsock);
+  process_connections( /*lsock */ );
 }
 
-void process_connections(const int lsock)
+void process_connections(void /*const int lsock */ )
 {
   int fd;
   fd_set status, current;
@@ -85,6 +99,8 @@ void process_connections(const int lsock)
                                    that are not readable; and in the next
                                    run requires them to be set again. */
     if (select(FD_SETSIZE, &current, NULL, NULL, NULL) == -1) {
+      if (errno == EINTR)
+        exit(0);
       perror("select() failed");
       exit(5);
     }
@@ -92,14 +108,14 @@ void process_connections(const int lsock)
     for (fd = 0; fd < FD_SETSIZE; fd++)
       if (FD_ISSET(fd, &current)) {
         if (fd == lsock)
-          accept_connection(&status, lsock, clients);
+          accept_connection(&status, /*lsock, */ clients);
         else
           handle_data(&status, fd, clients);
       }
   }
 }
 
-void accept_connection(fd_set * status, int lsock,
+void accept_connection(fd_set * status, /*int lsock, */
                        struct client_data **clients)
 {
   struct sockaddr_in csockaddr;
