@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 
 struct client_data {
-  char buf[40];                 /* this implies the max line length */
+  char buf[4096];               /* this implies the max line length */
   size_t buf_len;
   char ident[128];
 };
@@ -74,13 +74,10 @@ void process_connections(const int lsock)
 
   memset(clients, 0, sizeof(clients));
 
-  printf("Listening on %d.\n", lsock);
-
   FD_ZERO(&status);
   FD_SET(lsock, &status);
 
   for (;;) {
-    fprintf(stderr, "running select()\n");
     current = status;           /* I copy the original fd_set every time,
                                    because select() obviously clears fds
                                    that are not readable; and in the next
@@ -89,7 +86,7 @@ void process_connections(const int lsock)
       perror("select() failed");
       exit(5);
     }
-    fprintf(stderr, "select() returned\n");
+
     for (fd = 0; fd < FD_SETSIZE; fd++)
       if (FD_ISSET(fd, &current)) {
         if (fd == lsock)
@@ -129,9 +126,7 @@ void accept_connection(fd_set * status, int lsock,
 void handle_data(fd_set * status, int csock, struct client_data **clients)
 {
   struct client_data *c = clients[csock];
-  int num_read;
-  fprintf(stderr, "[%s] sent something!\n", c->ident);
-  num_read =
+  int num_read =
       read(csock, c->buf + c->buf_len, sizeof(c->buf) - c->buf_len - 1);
   if (num_read <= 0)
     handle_client_error(status, csock, clients);
@@ -139,7 +134,7 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
     char *line_end;
     c->buf_len += num_read;
     c->buf[c->buf_len] = '\0';
-    for (;;) {
+    for (;;) {                  /* there may be several lines in the buffer */
       line_end = strchr(c->buf, '\n');
       if (line_end == NULL && c->buf_len >= sizeof(c->buf) - 1) {
         /* no new line, but buffer full, we have to flush */
@@ -157,10 +152,8 @@ void handle_data(fd_set * status, int csock, struct client_data **clients)
         c->buf[this_line_len] = '\0';
         handle_line(status, csock, clients);
         /* move the rest of the buffer to the begining; circular would be better... */
-        fprintf(stderr, "Copying...\n");
         for (i = 0; i + next_line_offset < c->buf_len; i++)
           *(c->buf + i) = *(c->buf + next_line_offset + i);
-        fprintf(stderr, "Copied!\n");
         c->buf_len -= next_line_offset;
       } else
         break;                  /* no new line, buffer not full, let's wait */
@@ -172,11 +165,23 @@ void handle_line(fd_set * status, int csock, struct client_data **clients)
 {
   struct client_data *c = clients[csock];
 
+  /* parse line into cmd and arg */
+  char *cmd = c->buf, *arg;
+  while (*cmd == ' ')
+    cmd++;
+  arg = strchr(cmd, ' ');
+  if (arg != NULL)
+    while (*arg == ' ') {
+      *arg = '\0';
+      arg++;
+    }
+
+  fprintf(stderr, "[%s] cmd = \"%s\" && arg = \"%s\"\n", c->ident, cmd,
+          arg);
+
   if (FD_ISSET(csock, status)) {
     /* FIXME: remove this; added only to circumvent a warning */
   }
-
-  fprintf(stderr, "[%s] sent line: \"%s\"\n", c->ident, c->buf);
 }
 
 void handle_client_error(fd_set * status, int csock,
