@@ -13,7 +13,7 @@ binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 for (;;) {
   print "connecting...\n";
   my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout, 'm@michalrus.com',
-                 'socat', '-', 'UNIX-CONNECT:./sock');
+                 'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
   my $pid = open3(*CIN, *COUT, *CERR, @command);
 
   binmode(COUT, ":utf8"); binmode(CERR, ":utf8"); binmode(CIN,  ":utf8");
@@ -34,7 +34,7 @@ for (;;) {
         print CIN "pong\n";
       } elsif ($ln =~ /^broadcast [^ ]+ (.*?)(?:\t(.*))?$/) {
         my $app = $1; my $title = $1; my $body = $2 ? $2 : "";
-        $app =~ s/—/-/g;
+        $app =~ s/—/-/g; $app =~ s/\s+/ /g; $title =~ s/\s+/ /g; $body =~ s/\\/\\\\/g;
         system("notify-send", "-h", "int:transient:1", "-a", $app, $title, $body);
       }
     } elsif ($found == 0) { # timeout
