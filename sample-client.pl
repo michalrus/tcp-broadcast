@@ -6,16 +6,16 @@ use utf8;
 
 use IPC::Open3;
 
-my $timeout = 3; # [s]
+my $timeout = 4; # [s]
+my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout,
+               '-i', $ENV{'HOME'} . '/.ssh/tcp-broadcast.pem', 'm@michalrus.com',
+               'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
 
 binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 
 for (;;) {
   print "connecting...\n";
-  my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout, 'm@michalrus.com',
-                 'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
   my $pid = open3(*CIN, *COUT, *CERR, @command);
-
   binmode(COUT, ":utf8"); binmode(CERR, ":utf8"); binmode(CIN,  ":utf8");
 
   my $rin; my $rout;
