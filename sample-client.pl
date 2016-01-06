@@ -8,6 +8,7 @@ use IPC::Open3;
 
 my $timeout = 4; # [s]
 my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout,
+               '-o', 'IdentitiesOnly=yes', '-F', '/dev/null',
                '-i', $ENV{'HOME'} . '/.ssh/tcp-broadcast.pem', 'm@michalrus.com',
                'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
 
