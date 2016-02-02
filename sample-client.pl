@@ -7,8 +7,18 @@ use utf8;
 use IPC::Open3;
 use IO::Socket::UNIX;
 
-my $timeout = 4; # [s]
-my @command = ('ssh', '-o', 'ConnectTimeout=' . $timeout,
+# Reconnect if we don’t hear from the server in this many seconds (we
+# ping-pong constantly, so that’ll only happen when real network
+# issues arise). Also, wait this many seconds between reconnecting.
+use constant TIMEOUT => 4; # [s]
+
+# If notifications with the same title arrive within this time span,
+# they’ll be merged and shown as one. This is here because
+# bitlbee-twitter sends multi-line tweets as several messages (with 0
+# delay in between).
+use constant MERGE_TIMESPAN => 0.1; # [s]
+
+my @command = ('ssh', '-o', 'ConnectTimeout=' . TIMEOUT,
                '-o', 'IdentitiesOnly=yes', '-F', '/dev/null',
                '-i', $ENV{'HOME'} . '/.ssh/tcp-broadcast.pem', 'm@michalrus.com',
                'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
@@ -27,9 +37,11 @@ for (;;) {
 
   my $rin; my $rout;
   my $awaiting_pong = 0; my $connected_printed = 0;
+  my $waiting_for_next_parts = 0;
+  my $parts_so_far = "";
   vec($rin, fileno(COUT), 1) = 1;
   for (;;) {
-    if ($dbus_socket) {
+    if ($dbus_socket && !$waiting_for_next_parts) {
       # check if the dbus session is still valid; exit otherwise
       my $socket = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => "\0" . $dbus_socket);
       unless ($socket) {
@@ -39,7 +51,7 @@ for (;;) {
       $socket->close();
     }
 
-    my ($found) = select($rout = $rin, undef, undef, $timeout);
+    my ($found) = select($rout = $rin, undef, undef, ($waiting_for_next_parts ? MERGE_TIMESPAN : TIMEOUT));
     if (($found > 0) && (my $ln = <COUT>)) {
       $awaiting_pong = 0;
       chomp $ln;
@@ -57,6 +69,8 @@ for (;;) {
     } elsif ($found == 0) { # timeout
       if ($awaiting_pong) {
         last;
+      } elsif ($waiting_for_next_parts) {
+        # timeout when waiting for next parts → cool, display what we’ve got
       } else {
         print CIN "ping\n";
         $awaiting_pong = 1;
@@ -70,5 +84,5 @@ for (;;) {
   close(COUT); close(CERR); close(CIN);
   kill 'TERM', $pid; waitpid $pid, 0;
   last if $dbus_ended;
-  sleep $timeout;
+  sleep TIMEOUT;
 }
