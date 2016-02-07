@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use utf8;
 
+use Unicode::Normalize;
 use IPC::Open3;
 use IO::Socket::UNIX;
 
@@ -66,7 +67,8 @@ for (;;) {
         print CIN "pong\n";
       } elsif ($ln =~ /^broadcast [^ ]+ (.*?)(?:\t(.*))?$/) {
         my $app = $1; my $title = $1; my $body = $2 ? $2 : "";
-        $app =~ s/—/-/g; $app =~ s/\s+/ /g; $title =~ s/\s+/ /g; $body =~ s/\\/\\\\/g;
+        $app =~ s/—/-/g; $app =~ s/\s+/ /g; $app = NFKD($app); $app =~ s/[^A-Za-z0-9 _.-]//g;
+        $title =~ s/\s+/ /g; $body =~ s/\\/\\\\/g;
         if (!$waiting_for_next_parts) {
           $parts_app = $app;
           $parts_title = $title;
