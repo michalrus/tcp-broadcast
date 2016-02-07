@@ -14,6 +14,7 @@ def notify(title, message):
   c = socket.socket( socket.AF_UNIX, socket.SOCK_STREAM )
   c.connect(expanduser("~") + "/.weechat/notify.sock")
   c.send("broadcast " + title + "\t" + message + "\r\n")
+  buf = c.recv(128) # let’s wait for some bytes back; without this, the notification isn’t always broadcasted
   c.close()
 
 def parse_cmd(data, buffer, args):

@@ -58,6 +58,8 @@ int main(const int argc, /*const */ char **argv)
 
   signal(SIGINT, sighandler);
   signal(SIGTERM, sighandler);
+  signal(SIGPIPE, SIG_IGN);     /* ignore all SIGPIPEs (from write()s to
+                                   sockets closed by clients) */
 
   listen_on((unsigned short) port);
 
