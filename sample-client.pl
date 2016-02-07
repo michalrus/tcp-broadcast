@@ -16,7 +16,7 @@ use constant TIMEOUT => 4; # [s]
 # they’ll be merged and shown as one. This is here because
 # bitlbee-twitter sends multi-line tweets as several messages (with 0
 # delay in between).
-use constant MERGE_TIMESPAN => 0.1; # [s]
+use constant MERGE_TIMESPAN => 0.05; # [s]
 
 my @command = ('ssh', '-o', 'ConnectTimeout=' . TIMEOUT,
                '-o', 'IdentitiesOnly=yes', '-F', '/dev/null',
@@ -38,11 +38,14 @@ for (;;) {
   my $rin; my $rout;
   my $awaiting_pong = 0; my $connected_printed = 0;
   my $waiting_for_next_parts = 0;
+  my $parts_app = "";
+  my $parts_title = "";
   my $parts_so_far = "";
   vec($rin, fileno(COUT), 1) = 1;
   for (;;) {
     if ($dbus_socket && !$waiting_for_next_parts) {
       # check if the dbus session is still valid; exit otherwise
+      # don’t check if waiting for next parts (that would be simply too often)
       my $socket = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => "\0" . $dbus_socket);
       unless ($socket) {
         $dbus_ended = 1;
@@ -64,13 +67,27 @@ for (;;) {
       } elsif ($ln =~ /^broadcast [^ ]+ (.*?)(?:\t(.*))?$/) {
         my $app = $1; my $title = $1; my $body = $2 ? $2 : "";
         $app =~ s/—/-/g; $app =~ s/\s+/ /g; $title =~ s/\s+/ /g; $body =~ s/\\/\\\\/g;
-        system("notify-send", "-h", "int:transient:1", "-a", $app, $title, $body);
+        if (!$waiting_for_next_parts) {
+          $parts_app = $app;
+          $parts_title = $title;
+          $parts_so_far = $body;
+          $waiting_for_next_parts = 1;
+        } elsif ($parts_app eq $app && $parts_title eq $title) {
+          $parts_so_far .= "\n" . $body;
+        } else {
+          # not the same tweet, don’t merge
+          system("notify-send", "-h", "int:transient:1", "-a", $parts_app, $parts_title, $parts_so_far);
+          system("notify-send", "-h", "int:transient:1", "-a", $app, $title, $body);
+          $waiting_for_next_parts = 0;
+        }
       }
     } elsif ($found == 0) { # timeout
       if ($awaiting_pong) {
         last;
       } elsif ($waiting_for_next_parts) {
         # timeout when waiting for next parts → cool, display what we’ve got
+        system("notify-send", "-h", "int:transient:1", "-a", $parts_app, $parts_title, $parts_so_far);
+        $waiting_for_next_parts = 0;
       } else {
         print CIN "ping\n";
         $awaiting_pong = 1;
