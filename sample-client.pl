@@ -29,6 +29,8 @@ $dbus_socket = $1 if $ENV{'DBUS_SESSION_BUS_ADDRESS'} =~ /^.*?=(.*?),.*?$/;
 
 binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 
+sub es { my ($s) = @_; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; return $s; };
+
 for (;;) {
   my $dbus_ended = 0;
 
@@ -78,8 +80,8 @@ for (;;) {
           $parts_so_far .= "\n" . $body;
         } else {
           # not the same tweet, don’t merge
-          system("notify-send", "-h", "int:transient:1", "-a", $parts_app, $parts_title, $parts_so_far);
-          system("notify-send", "-h", "int:transient:1", "-a", $app, $title, $body);
+          system("notify-send", "-h", "int:transient:1", "-a", $parts_app, es($parts_title), es($parts_so_far));
+          system("notify-send", "-h", "int:transient:1", "-a", $app, es($title), es($body));
           $waiting_for_next_parts = 0;
         }
       }
@@ -88,7 +90,7 @@ for (;;) {
         last;
       } elsif ($waiting_for_next_parts) {
         # timeout when waiting for next parts → cool, display what we’ve got
-        system("notify-send", "-h", "int:transient:1", "-a", $parts_app, $parts_title, $parts_so_far);
+        system("notify-send", "-h", "int:transient:1", "-a", $parts_app, es($parts_title), es($parts_so_far));
         $waiting_for_next_parts = 0;
       } else {
         print CIN "ping\n";
