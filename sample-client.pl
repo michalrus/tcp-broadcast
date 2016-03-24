@@ -29,7 +29,7 @@ $dbus_socket = $1 if $ENV{'DBUS_SESSION_BUS_ADDRESS'} =~ /^.*?=(.*?),.*?$/;
 
 binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 
-sub es { my ($s) = @_; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; return $s; };
+sub es { my ($s) = @_; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; return $s; };
 
 for (;;) {
   my $dbus_ended = 0;
