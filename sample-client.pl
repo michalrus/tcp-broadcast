@@ -6,7 +6,6 @@ use utf8;
 
 use Unicode::Normalize;
 use IPC::Open3;
-use IO::Socket::UNIX;
 
 # Reconnect if we don’t hear from the server in this many seconds (we
 # ping-pong constantly, so that’ll only happen when real network
@@ -24,16 +23,11 @@ my @command = ('ssh', '-o', 'ConnectTimeout=' . TIMEOUT,
                '-i', $ENV{'HOME'} . '/.ssh/tcp-broadcast.pem', 'm@michalrus.com',
                'socat', '-', 'UNIX-CONNECT:.weechat/notify.sock');
 
-my $dbus_socket;
-$dbus_socket = $1 if $ENV{'DBUS_SESSION_BUS_ADDRESS'} =~ /^.*?=(.*?),.*?$/;
-
 binmode(STDOUT, ":utf8"); binmode(STDERR, ":utf8"); binmode(STDIN,  ":utf8");
 
 sub es { my ($s) = @_; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; return $s; };
 
 for (;;) {
-  my $dbus_ended = 0;
-
   print "connecting...\n";
   my $pid = open3(*CIN, *COUT, *CERR, @command);
   binmode(COUT, ":utf8"); binmode(CERR, ":utf8"); binmode(CIN,  ":utf8");
@@ -46,17 +40,6 @@ for (;;) {
   my $parts_so_far = "";
   vec($rin, fileno(COUT), 1) = 1;
   for (;;) {
-    if ($dbus_socket && !$waiting_for_next_parts) {
-      # check if the dbus session is still valid; exit otherwise
-      # don’t check if waiting for next parts (that would be simply too often)
-      my $socket = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => "\0" . $dbus_socket);
-      unless ($socket) {
-        $dbus_ended = 1;
-        last;
-      }
-      $socket->close();
-    }
-
     my ($found) = select($rout = $rin, undef, undef, ($waiting_for_next_parts ? MERGE_TIMESPAN : TIMEOUT));
     if (($found > 0) && (my $ln = <COUT>)) {
       $awaiting_pong = 0;
@@ -104,6 +87,5 @@ for (;;) {
   print "failed\n";
   close(COUT); close(CERR); close(CIN);
   kill 'TERM', $pid; waitpid $pid, 0;
-  last if $dbus_ended;
   sleep TIMEOUT;
 }
